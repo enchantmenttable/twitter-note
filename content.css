@@ -18,6 +18,17 @@
     box-sizing: border-box;
 }
 
+/* Wrapper for note button + blocked button on blocklist page */
+.twitter-note-btn-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.twitter-note-btn-wrapper .twitter-note-btn {
+    margin-right: 0;
+}
+
 .twitter-note-btn:hover {
     border-color: #cfd9de;
     background-color: #e7e7e7;
@@ -52,6 +63,7 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    font-family: "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 /* Custom resize handle */
@@ -133,7 +145,7 @@
     border: none;
     color: rgb(231, 233, 234);
     font-size: 15px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: inherit;
     resize: none;
     outline: none;
     overflow-y: auto;

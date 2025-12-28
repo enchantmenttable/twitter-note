@@ -165,7 +165,10 @@
     }
 
     // Toggle note panel
-    async function toggleNotePanel(button) {
+    async function toggleNotePanel(button, username) {
+        // Use provided username or fall back to currentUsername (for profile pages)
+        const targetUsername = username || currentUsername;
+
         // Check if panel already exists
         let panel = document.querySelector('.twitter-note-panel');
 
@@ -191,8 +194,8 @@
         const closeBtn = panel.querySelector('.twitter-note-close');
 
         // Load existing note
-        if (currentUsername) {
-            textarea.value = await loadNote(currentUsername);
+        if (targetUsername) {
+            textarea.value = await loadNote(targetUsername);
             status.textContent = textarea.value ? '— Saved' : '— Autosaved';
         }
 
@@ -208,8 +211,8 @@
             }
 
             saveTimeout = setTimeout(async () => {
-                if (currentUsername) {
-                    const success = await saveNote(currentUsername, textarea.value);
+                if (targetUsername) {
+                    const success = await saveNote(targetUsername, textarea.value);
                     status.textContent = success ? '— Saved' : '— Error saving';
 
                     // Update button style based on note content
@@ -289,12 +292,71 @@
         parent.insertBefore(noteContainer, moreButton);
     }
 
+    // Check if on a user list page (blocked or muted)
+    function getUserListType() {
+        const path = window.location.pathname;
+        if (path === '/settings/blocked/all') return 'Blocked';
+        if (path === '/settings/muted/all') return 'Unmute';
+        return null;
+    }
+
+    // Inject note buttons into user list items (blocklist or mutelist)
+    function injectUserListButtons() {
+        const listType = getUserListType();
+        if (!listType) return;
+
+        const userCells = document.querySelectorAll('[data-testid="UserCell"]');
+
+        for (const cell of userCells) {
+            // Find the action button (Blocked or Muted)
+            const actionButton = cell.querySelector(`button[aria-label="${listType}"]`);
+            if (!actionButton) continue;
+
+            // Skip if already injected
+            if (cell.querySelector('.twitter-note-btn-wrapper')) continue;
+
+            const buttonParent = actionButton.parentElement;
+
+            // Find username from the profile link
+            const profileLink = cell.querySelector('a[href^="/"]');
+            if (!profileLink) continue;
+
+            const href = profileLink.getAttribute('href');
+            const username = href.replace('/', '').toLowerCase();
+            if (!username) continue;
+
+            // Create note button
+            const noteButton = createNoteButton();
+
+            // Click handler - pass username explicitly
+            noteButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleNotePanel(noteButton, username);
+            });
+
+            // Create wrapper to hold both buttons together (avoids parent flex gap)
+            const wrapper = document.createElement('div');
+            wrapper.className = 'twitter-note-btn-wrapper';
+
+            // Replace action button with wrapper containing both buttons
+            buttonParent.insertBefore(wrapper, actionButton);
+            wrapper.appendChild(noteButton);
+            wrapper.appendChild(actionButton);
+
+            // Check if user has existing note (async, update style after)
+            hasNote(username).then(has => {
+                if (has) noteButton.classList.add('has-note');
+            });
+        }
+    }
+
     // Observe DOM changes for SPA navigation
     function observeDOM() {
-        const observer = new MutationObserver((mutations) => {
+        const observer = new MutationObserver(() => {
             // Debounce check
             requestAnimationFrame(() => {
                 injectNoteButton();
+                injectUserListButtons();
             });
         });
 
@@ -308,6 +370,7 @@
     function init() {
         // Initial injection attempt
         injectNoteButton();
+        injectUserListButtons();
 
         // Watch for SPA navigation
         observeDOM();
