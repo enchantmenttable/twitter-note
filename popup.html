@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitter Notes</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Main view -->
+  <div id="main-view" class="view">
+    <div class="header">
+      <h1>Twitter Notes</h1>
+      <p id="note-count" class="subtitle">Loading...</p>
+    </div>
+    <div class="buttons">
+      <button id="export-btn" class="btn btn-primary">Export Notes</button>
+      <button id="import-btn" class="btn btn-secondary">Import Notes</button>
+      <input type="file" id="import-file" accept=".json" hidden>
+    </div>
+    <p id="status" class="status"></p>
+  </div>
+
+  <!-- Conflict resolution view -->
+  <div id="conflict-view" class="view hidden">
+    <div class="header">
+      <h2 id="conflict-title">Conflict 1 of 1</h2>
+      <p id="conflict-username" class="username">@username</p>
+    </div>
+
+    <div class="conflict-section">
+      <p class="conflict-label">Current:</p>
+      <div id="current-note" class="note-preview"></div>
+    </div>
+
+    <div class="conflict-section">
+      <p class="conflict-label">Imported:</p>
+      <div id="imported-note" class="note-preview"></div>
+    </div>
+
+    <div class="conflict-buttons">
+      <button id="keep-current-btn" class="btn btn-secondary">Keep Current</button>
+      <button id="use-imported-btn" class="btn btn-primary">Use Imported</button>
+    </div>
+
+    <div class="bulk-buttons">
+      <button id="keep-all-current-btn" class="btn btn-text">Keep All Current</button>
+      <button id="use-all-imported-btn" class="btn btn-text">Use All Imported</button>
+    </div>
+  </div>
+
+  <!-- Summary view -->
+  <div id="summary-view" class="view hidden">
+    <div class="header">
+      <h2>Import Complete</h2>
+    </div>
+    <p id="summary-text" class="summary"></p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
