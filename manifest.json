@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Twitter Note",
+  "version": "1.0.0",
+  "description": "Add personal notes to Twitter/X user profiles",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
