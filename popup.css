@@ -25,6 +25,22 @@ body {
   margin-bottom: 16px;
 }
 
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.feedback-link {
+  color: rgb(113, 118, 123);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.feedback-link:hover {
+  text-decoration: underline;
+}
+
 h1 {
   font-size: 20px;
   font-weight: 700;
