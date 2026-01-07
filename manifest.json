@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twitter Notes - X Profile Annotations",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Add personal notes to Twitter/X user profiles",
   "permissions": ["storage"],
   "action": {

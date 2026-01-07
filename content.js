@@ -12,6 +12,11 @@
     const CLOSE_ICON = `<svg viewBox="0 0 24 24"><path d="M18.3 5.71a.996.996 0 00-1.41 0L12 10.59 7.11 5.7A.996.996 0 105.7 7.11L10.59 12 5.7 16.89a.996.996 0 101.41 1.41L12 13.41l4.89 4.89a.996.996 0 101.41-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"/></svg>`;
     const RESIZE_ICON = `<svg viewBox="0 0 24 24"><path d="M22 22H20V20H22V22ZM22 18H20V16H22V18ZM18 22H16V20H18V22ZM22 14H20V12H22V14ZM18 18H16V16H18V18ZM14 22H12V20H14V22Z"/></svg>`;
 
+    // Check if extension context is still valid
+    function isContextValid() {
+        return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+    }
+
     // Get username from URL
     function getUsernameFromUrl() {
         const match = window.location.pathname.match(/^\/([^\/]+)/);
@@ -28,6 +33,10 @@
 
     // Load note from storage
     async function loadNote(username) {
+        if (!isContextValid()) {
+            console.warn('Twitter Note: Extension context invalidated. Please refresh the page.');
+            return '';
+        }
         try {
             const result = await chrome.storage.local.get('notes');
             const notes = result.notes || {};
@@ -40,6 +49,10 @@
 
     // Save note to storage
     async function saveNote(username, content) {
+        if (!isContextValid()) {
+            console.error('Twitter Note: Cannot save, context invalidated. Please refresh the page.');
+            return false;
+        }
         try {
             const result = await chrome.storage.local.get('notes');
             const notes = result.notes || {};
@@ -249,6 +262,64 @@
         window.addEventListener('popstate', closeOnNavigation);
     }
 
+    // Extract username from block button
+    function extractUsernameFromBlock(blockButton) {
+        // Try aria-label first
+        const label = blockButton.getAttribute('aria-label') || '';
+        // Also check inner text in case it's in a span
+        const text = blockButton.innerText || '';
+        const combined = (label + ' ' + text).trim();
+
+        const match = combined.match(/Block @(\w+)/i);
+        return match ? match[1].toLowerCase() : null;
+    }
+
+    // Inject note button into tweet dropdown
+    async function injectTweetDropdownButton() {
+        // Find all dropdowns (Twitter uses [data-testid="Dropdown"] or [role="menu"])
+        const dropdowns = document.querySelectorAll('[data-testid="Dropdown"], [role="menu"]');
+        if (dropdowns.length === 0) return;
+
+        for (const dropdown of dropdowns) {
+            // Find the block button - try multiple possible selectors
+            const blockButton = dropdown.querySelector('[data-testid="block"]') ||
+                dropdown.querySelector('[data-testid="blockUser"]') ||
+                Array.from(dropdown.querySelectorAll('[role="menuitem"]')).find(el => el.innerText.includes('Block @'));
+
+            if (!blockButton) continue;
+
+            // Skip if already injected
+            if (dropdown.querySelector('.twitter-note-dropdown-item')) continue;
+
+            const username = extractUsernameFromBlock(blockButton);
+            if (!username) continue;
+
+            // Check if user has a note
+            const noteExists = await hasNote(username);
+
+            // Create dropdown item
+            const dropdownItem = document.createElement('div');
+            dropdownItem.className = 'twitter-note-dropdown-item';
+            dropdownItem.setAttribute('role', 'menuitem');
+            dropdownItem.setAttribute('tabindex', '0');
+            dropdownItem.innerHTML = `
+            ${NOTE_ICON}
+            <span class="twitter-note-dropdown-item-text">${noteExists ? 'Edit note' : 'Add note'}</span>
+        `;
+
+            // Click handler
+            dropdownItem.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleNotePanel(dropdownItem, username);
+            });
+
+            // Insert before the block button
+            if (blockButton.parentNode) {
+                blockButton.parentNode.insertBefore(dropdownItem, blockButton);
+            }
+        }
+    }
+
     // Inject note button
     async function injectNoteButton() {
         const username = getUsernameFromUrl();
@@ -357,6 +428,7 @@
             requestAnimationFrame(() => {
                 injectNoteButton();
                 injectUserListButtons();
+                injectTweetDropdownButton();
             });
         });
 
@@ -371,6 +443,7 @@
         // Initial injection attempt
         injectNoteButton();
         injectUserListButtons();
+        injectTweetDropdownButton();
 
         // Watch for SPA navigation
         observeDOM();

@@ -154,3 +154,38 @@
 .twitter-note-textarea::placeholder {
     color: rgb(113, 118, 123);
 }
+
+/* Dropdown menu item */
+.twitter-note-dropdown-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    user-select: none;
+    outline: none;
+    border: none;
+    background: transparent;
+    width: 100%;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+.twitter-note-dropdown-item:hover {
+    background-color: rgba(239, 243, 244, 0.1);
+}
+
+.twitter-note-dropdown-item svg {
+    width: 18.75px;
+    height: 18.75px;
+    fill: rgb(15, 20, 25) !important;
+    margin-right: 12px;
+}
+
+.twitter-note-dropdown-item-text {
+    font-size: 15px;
+    font-weight: 700;
+    color: rgb(15, 20, 25);
+    line-height: 20px;
+    font-family: inherit;
+}
