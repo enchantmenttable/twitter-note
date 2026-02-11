@@ -172,7 +172,7 @@
 }
 
 .twitter-note-dropdown-item:hover {
-    background-color: rgba(239, 243, 244, 0.1);
+    background-color: #f7f7f7;
 }
 
 .twitter-note-dropdown-item svg {
@@ -187,5 +187,5 @@
     font-weight: 700;
     color: rgb(15, 20, 25);
     line-height: 20px;
-    font-family: inherit;
+    font-family: "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
