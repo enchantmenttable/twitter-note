@@ -149,10 +149,166 @@
     resize: none;
     outline: none;
     overflow-y: auto;
+    box-sizing: border-box;
 }
 
 .twitter-note-textarea::placeholder {
     color: rgb(113, 118, 123);
+}
+
+/* Screenshot thumbnails */
+.twitter-note-screenshots {
+    display: flex;
+    gap: 6px;
+    padding: 0 16px 8px;
+    overflow-x: auto;
+    flex-shrink: 0;
+}
+
+.twitter-note-screenshots:empty {
+    display: none;
+}
+
+
+.twitter-note-thumb {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    min-width: 60px;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 1px solid rgb(47, 51, 54);
+}
+
+.twitter-note-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.twitter-note-thumb-delete {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    border: none;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.twitter-note-thumb-delete svg {
+    width: 10px;
+    height: 10px;
+    fill: white;
+}
+
+.twitter-note-thumb:hover .twitter-note-thumb-delete {
+    display: flex;
+}
+
+/* Lightbox / Carousel */
+.twitter-note-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.twitter-note-lightbox-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+}
+
+.twitter-note-lightbox-img {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+.twitter-note-lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 1;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.twitter-note-lightbox-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.twitter-note-lightbox-close svg {
+    width: 20px;
+    height: 20px;
+    fill: rgb(239, 243, 244);
+}
+
+.twitter-note-lightbox-prev,
+.twitter-note-lightbox-next {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+    color: rgb(239, 243, 244);
+}
+
+.twitter-note-lightbox-prev:hover,
+.twitter-note-lightbox-next:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.twitter-note-lightbox-prev {
+    left: 16px;
+}
+
+.twitter-note-lightbox-next {
+    right: 16px;
+}
+
+.twitter-note-lightbox-prev svg,
+.twitter-note-lightbox-next svg {
+    width: 24px;
+    height: 24px;
+    stroke: rgb(239, 243, 244);
+}
+
+.twitter-note-lightbox-counter {
+    position: absolute;
+    bottom: 24px;
+    color: rgb(231, 233, 234);
+    font-size: 14px;
+    font-family: "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 /* Dropdown menu item */

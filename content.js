@@ -11,6 +11,10 @@
     const NOTE_ICON = `<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h7v2H7v-2z"/></svg>`;
     const CLOSE_ICON = `<svg viewBox="0 0 24 24"><path d="M18.3 5.71a.996.996 0 00-1.41 0L12 10.59 7.11 5.7A.996.996 0 105.7 7.11L10.59 12 5.7 16.89a.996.996 0 101.41 1.41L12 13.41l4.89 4.89a.996.996 0 101.41-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"/></svg>`;
     const RESIZE_ICON = `<svg viewBox="0 0 24 24"><path d="M22 22H20V20H22V22ZM22 18H20V16H22V18ZM18 22H16V20H18V22ZM22 14H20V12H22V14ZM18 18H16V16H18V18ZM14 22H12V20H14V22Z"/></svg>`;
+    const CHEVRON_LEFT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
+    const CHEVRON_RIGHT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`;
+    const DELETE_ICON = `<svg viewBox="0 0 24 24"><path d="M18.3 5.71a.996.996 0 00-1.41 0L12 10.59 7.11 5.7A.996.996 0 105.7 7.11L10.59 12 5.7 16.89a.996.996 0 101.41 1.41L12 13.41l4.89 4.89a.996.996 0 101.41-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"/></svg>`;
+    const MAX_SCREENSHOTS = 10;
 
     // Check if extension context is still valid
     function isContextValid() {
@@ -31,24 +35,31 @@
         return null;
     }
 
+    // Normalize note from storage (handles old string format and new object format)
+    function normalizeNote(raw) {
+        if (!raw) return { text: '', screenshots: [] };
+        if (typeof raw === 'string') return { text: raw, screenshots: [] };
+        return { text: raw.text || '', screenshots: raw.screenshots || [] };
+    }
+
     // Load note from storage
     async function loadNote(username) {
         if (!isContextValid()) {
             console.warn('Twitter Note: Extension context invalidated. Please refresh the page.');
-            return '';
+            return { text: '', screenshots: [] };
         }
         try {
             const result = await chrome.storage.local.get('notes');
             const notes = result.notes || {};
-            return notes[username] || '';
+            return normalizeNote(notes[username]);
         } catch (e) {
             console.error('Twitter Note: Error loading note', e);
-            return '';
+            return { text: '', screenshots: [] };
         }
     }
 
     // Save note to storage
-    async function saveNote(username, content) {
+    async function saveNote(username, text, screenshots) {
         if (!isContextValid()) {
             console.error('Twitter Note: Cannot save, context invalidated. Please refresh the page.');
             return false;
@@ -56,8 +67,8 @@
         try {
             const result = await chrome.storage.local.get('notes');
             const notes = result.notes || {};
-            if (content.trim()) {
-                notes[username] = content;
+            if (text.trim() || (screenshots && screenshots.length > 0)) {
+                notes[username] = { text, screenshots: screenshots || [] };
             } else {
                 delete notes[username];
             }
@@ -72,7 +83,36 @@
     // Check if user has a note
     async function hasNote(username) {
         const note = await loadNote(username);
-        return note.trim().length > 0;
+        return note.text.trim().length > 0 || note.screenshots.length > 0;
+    }
+
+    // Process clipboard image: resize if needed, convert to JPEG
+    async function processClipboardImage(blob) {
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                let { width, height } = img;
+                const maxDim = 1920;
+                if (width > maxDim || height > maxDim) {
+                    const scale = maxDim / Math.max(width, height);
+                    width = Math.round(width * scale);
+                    height = Math.round(height * scale);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', 0.7));
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                reject(new Error('Failed to load image'));
+            };
+            img.src = url;
+        });
     }
 
     // Create note button
@@ -93,10 +133,90 @@
         <span class="twitter-note-title">Note <span class="twitter-note-status">— Autosaved</span></span>
         <button class="twitter-note-close">${CLOSE_ICON}</button>
       </div>
-      <textarea class="twitter-note-textarea" placeholder="Write a note about this user..."></textarea>
+      <textarea class="twitter-note-textarea" placeholder="Write a note (you can paste screenshots too)"></textarea>
+      <div class="twitter-note-screenshots"></div>
       <div class="twitter-note-resize-handle">${RESIZE_ICON}</div>
     `;
         return panel;
+    }
+
+    // Render screenshot thumbnails
+    function renderScreenshots(container, screenshots, onDelete, onView) {
+        container.innerHTML = '';
+        screenshots.forEach((dataUrl, index) => {
+            const thumb = document.createElement('div');
+            thumb.className = 'twitter-note-thumb';
+
+            const img = document.createElement('img');
+            img.src = dataUrl;
+            img.addEventListener('click', (e) => {
+                e.stopPropagation();
+                onView(index);
+            });
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'twitter-note-thumb-delete';
+            deleteBtn.innerHTML = DELETE_ICON;
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                onDelete(index);
+            });
+
+            thumb.appendChild(img);
+            thumb.appendChild(deleteBtn);
+            container.appendChild(thumb);
+        });
+    }
+
+    // Open lightbox carousel for screenshots
+    function openLightbox(screenshots, startIndex) {
+        let currentIndex = startIndex;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'twitter-note-lightbox';
+        overlay.innerHTML = `
+            <div class="twitter-note-lightbox-backdrop"></div>
+            <button class="twitter-note-lightbox-close">${CLOSE_ICON}</button>
+            <button class="twitter-note-lightbox-prev">${CHEVRON_LEFT}</button>
+            <img class="twitter-note-lightbox-img" />
+            <button class="twitter-note-lightbox-next">${CHEVRON_RIGHT}</button>
+            <span class="twitter-note-lightbox-counter"></span>
+        `;
+
+        const img = overlay.querySelector('.twitter-note-lightbox-img');
+        const prevBtn = overlay.querySelector('.twitter-note-lightbox-prev');
+        const nextBtn = overlay.querySelector('.twitter-note-lightbox-next');
+        const counter = overlay.querySelector('.twitter-note-lightbox-counter');
+        const closeBtn = overlay.querySelector('.twitter-note-lightbox-close');
+        const backdrop = overlay.querySelector('.twitter-note-lightbox-backdrop');
+
+        function update() {
+            img.src = screenshots[currentIndex];
+            counter.textContent = `${currentIndex + 1} / ${screenshots.length}`;
+            prevBtn.style.display = currentIndex > 0 ? '' : 'none';
+            nextBtn.style.display = currentIndex < screenshots.length - 1 ? '' : 'none';
+        }
+
+        function close() {
+            overlay.remove();
+            document.removeEventListener('keydown', onKey);
+        }
+
+        function onKey(e) {
+            if (e.key === 'Escape') close();
+            if (e.key === 'ArrowLeft' && currentIndex > 0) { currentIndex--; update(); }
+            if (e.key === 'ArrowRight' && currentIndex < screenshots.length - 1) { currentIndex++; update(); }
+        }
+
+        closeBtn.addEventListener('click', (e) => { e.stopPropagation(); close(); });
+        prevBtn.addEventListener('click', (e) => { e.stopPropagation(); currentIndex--; update(); });
+        nextBtn.addEventListener('click', (e) => { e.stopPropagation(); currentIndex++; update(); });
+        backdrop.addEventListener('click', (e) => { e.stopPropagation(); close(); });
+        overlay.addEventListener('click', (e) => e.stopPropagation());
+        document.addEventListener('keydown', onKey);
+
+        update();
+        document.body.appendChild(overlay);
     }
 
     // Position the panel relative to the button (initial position only)
@@ -106,10 +226,33 @@
         panel.style.left = Math.max(10, rect.left - 280) + 'px';
     }
 
+    // Track document-level listeners so we can clean them up when panel closes
+    let panelCleanupFns = [];
+
+    function addPanelDocListener(event, fn) {
+        document.addEventListener(event, fn);
+        panelCleanupFns.push(() => document.removeEventListener(event, fn));
+    }
+
+    function cleanupPanelListeners() {
+        panelCleanupFns.forEach(fn => fn());
+        panelCleanupFns = [];
+    }
+
+    // Transparent overlay to capture mouse events during drag/resize
+    // Prevents Twitter content (iframes, images) from stealing events
+    function createMouseOverlay() {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483646;cursor:inherit;';
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
     // Make panel draggable via header
     function makeDraggable(panel) {
         const header = panel.querySelector('.twitter-note-header');
         let isDragging = false;
+        let overlay = null;
         let offsetX = 0;
         let offsetY = 0;
 
@@ -118,12 +261,14 @@
             if (e.target.closest('.twitter-note-close')) return;
 
             isDragging = true;
+            overlay = createMouseOverlay();
+            overlay.style.cursor = 'grabbing';
             offsetX = e.clientX - panel.offsetLeft;
             offsetY = e.clientY - panel.offsetTop;
             e.preventDefault();
         });
 
-        document.addEventListener('mousemove', (e) => {
+        addPanelDocListener('mousemove', (e) => {
             if (!isDragging) return;
 
             const newLeft = e.clientX - offsetX;
@@ -134,8 +279,9 @@
             panel.style.top = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, newTop)) + 'px';
         });
 
-        document.addEventListener('mouseup', () => {
+        addPanelDocListener('mouseup', () => {
             isDragging = false;
+            if (overlay) { overlay.remove(); overlay = null; }
         });
     }
 
@@ -143,6 +289,7 @@
     function makeResizable(panel) {
         const handle = panel.querySelector('.twitter-note-resize-handle');
         let isResizing = false;
+        let overlay = null;
         let startX = 0;
         let startY = 0;
         let startWidth = 0;
@@ -150,6 +297,8 @@
 
         handle.addEventListener('mousedown', (e) => {
             isResizing = true;
+            overlay = createMouseOverlay();
+            overlay.style.cursor = 'nwse-resize';
             startX = e.clientX;
             startY = e.clientY;
             startWidth = panel.offsetWidth;
@@ -158,7 +307,7 @@
             e.stopPropagation();
         });
 
-        document.addEventListener('mousemove', (e) => {
+        addPanelDocListener('mousemove', (e) => {
             if (!isResizing) return;
 
             const deltaX = e.clientX - startX;
@@ -172,8 +321,9 @@
             panel.style.height = newHeight + 'px';
         });
 
-        document.addEventListener('mouseup', () => {
+        addPanelDocListener('mouseup', () => {
             isResizing = false;
+            if (overlay) { overlay.remove(); overlay = null; }
         });
     }
 
@@ -185,9 +335,16 @@
         // Check if panel already exists
         let panel = document.querySelector('.twitter-note-panel');
 
+        // Helper to close panel and clean up listeners
+        function closePanel() {
+            if (panel && panel.parentNode) {
+                panel.remove();
+                cleanupPanelListeners();
+            }
+        }
+
         if (panel) {
-            // Close panel
-            panel.remove();
+            closePanel();
             return;
         }
 
@@ -205,50 +362,101 @@
         const textarea = panel.querySelector('.twitter-note-textarea');
         const status = panel.querySelector('.twitter-note-status');
         const closeBtn = panel.querySelector('.twitter-note-close');
+        const screenshotsContainer = panel.querySelector('.twitter-note-screenshots');
 
-        // Load existing note
-        if (targetUsername) {
-            textarea.value = await loadNote(targetUsername);
-            status.textContent = textarea.value ? '— Saved' : '— Autosaved';
-        }
+        // Screenshot state for this panel session
+        let screenshots = [];
 
-        // Focus textarea
-        textarea.focus();
-
-        // Autosave on input with debounce
-        textarea.addEventListener('input', () => {
+        // Helper to trigger debounced save of text + screenshots
+        function triggerSave() {
             status.textContent = '— Saving...';
-
-            if (saveTimeout) {
-                clearTimeout(saveTimeout);
-            }
-
+            if (saveTimeout) clearTimeout(saveTimeout);
             saveTimeout = setTimeout(async () => {
                 if (targetUsername) {
-                    const success = await saveNote(targetUsername, textarea.value);
+                    const success = await saveNote(targetUsername, textarea.value, screenshots);
                     status.textContent = success ? '— Saved' : '— Error saving';
-
-                    // Update button style based on note content
-                    if (textarea.value.trim()) {
+                    if (textarea.value.trim() || screenshots.length > 0) {
                         button.classList.add('has-note');
                     } else {
                         button.classList.remove('has-note');
                     }
                 }
             }, 500);
+        }
+
+        // Helper to re-render thumbnails
+        function updateThumbnails() {
+            renderScreenshots(screenshotsContainer, screenshots, (index) => {
+                screenshots.splice(index, 1);
+                updateThumbnails();
+                triggerSave();
+            }, (index) => {
+                openLightbox(screenshots, index);
+            });
+        }
+
+        // Load existing note
+        if (targetUsername) {
+            const note = await loadNote(targetUsername);
+            textarea.value = note.text;
+            screenshots = [...note.screenshots];
+            status.textContent = (note.text || screenshots.length > 0) ? '— Saved' : '— Autosaved';
+            updateThumbnails();
+        }
+
+        // Focus textarea
+        textarea.focus();
+
+        // Autosave on text input with debounce
+        textarea.addEventListener('input', () => {
+            triggerSave();
+        });
+
+        // Paste handler for screenshots
+        panel.addEventListener('paste', async (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    e.preventDefault();
+
+                    if (screenshots.length >= MAX_SCREENSHOTS) {
+                        status.textContent = `— Max ${MAX_SCREENSHOTS} screenshots`;
+                        setTimeout(() => {
+                            status.textContent = '— Saved';
+                        }, 3000);
+                        return;
+                    }
+
+                    try {
+                        const blob = item.getAsFile();
+                        const dataUrl = await processClipboardImage(blob);
+                        screenshots.push(dataUrl);
+                        updateThumbnails();
+                        triggerSave();
+                    } catch (err) {
+                        console.error('Twitter Note: Error processing screenshot', err);
+                        status.textContent = '— Error adding screenshot';
+                    }
+                    return;
+                }
+            }
         });
 
         // Close button
         closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            panel.remove();
+            closePanel();
         });
 
-        // Close on click outside
+        // Close on click outside (but not when lightbox is open)
         setTimeout(() => {
             document.addEventListener('click', function closeOnOutside(e) {
+                const lightbox = document.querySelector('.twitter-note-lightbox');
+                if (lightbox && lightbox.contains(e.target)) return;
                 if (!panel.contains(e.target) && !button.contains(e.target)) {
-                    panel.remove();
+                    closePanel();
                     document.removeEventListener('click', closeOnOutside);
                 }
             });
@@ -256,7 +464,7 @@
 
         // Close on browser back/forward navigation
         const closeOnNavigation = () => {
-            panel.remove();
+            closePanel();
             window.removeEventListener('popstate', closeOnNavigation);
         };
         window.addEventListener('popstate', closeOnNavigation);
@@ -275,49 +483,47 @@
     }
 
     // Inject note button into tweet dropdown
-    async function injectTweetDropdownButton() {
-        // Find all dropdowns (Twitter uses [data-testid="Dropdown"] or [role="menu"])
-        const dropdowns = document.querySelectorAll('[data-testid="Dropdown"], [role="menu"]');
-        if (dropdowns.length === 0) return;
+    let dropdownInjectTimeout = null;
+    function injectTweetDropdownButton() {
+        // Debounce: wait for dropdown to finish rendering
+        if (dropdownInjectTimeout) clearTimeout(dropdownInjectTimeout);
+        dropdownInjectTimeout = setTimeout(async () => {
+            // Skip if already injected anywhere on the page
+            if (document.querySelector('.twitter-note-dropdown-item')) return;
 
-        for (const dropdown of dropdowns) {
-            // Find the block button - try multiple possible selectors
-            const blockButton = dropdown.querySelector('[data-testid="block"]') ||
-                dropdown.querySelector('[data-testid="blockUser"]') ||
-                Array.from(dropdown.querySelectorAll('[role="menuitem"]')).find(el => el.innerText.includes('Block @'));
+            // Find block button - try specific testid first, fall back to text match
+            const blockButton = document.querySelector('[data-testid="block"]') ||
+                document.querySelector('[data-testid="blockUser"]') ||
+                Array.from(document.querySelectorAll('[role="menuitem"]')).find(el => el.innerText.includes('Block @'));
 
-            if (!blockButton) continue;
-
-            // Skip if already injected
-            if (dropdown.querySelector('.twitter-note-dropdown-item')) continue;
+            if (!blockButton || !blockButton.parentNode) return;
 
             const username = extractUsernameFromBlock(blockButton);
-            if (!username) continue;
-
-            // Check if user has a note
-            const noteExists = await hasNote(username);
+            if (!username) return;
 
             // Create dropdown item
             const dropdownItem = document.createElement('div');
             dropdownItem.className = 'twitter-note-dropdown-item';
             dropdownItem.setAttribute('role', 'menuitem');
             dropdownItem.setAttribute('tabindex', '0');
+
+            // Insert after the block button
+            blockButton.parentNode.insertBefore(dropdownItem, blockButton.nextSibling);
+
+            // Check if user has a note (async)
+            const noteExists = await hasNote(username);
+
             dropdownItem.innerHTML = `
-            ${NOTE_ICON}
-            <span class="twitter-note-dropdown-item-text">${noteExists ? 'Edit note' : 'Add note'}</span>
-        `;
+                ${NOTE_ICON}
+                <span class="twitter-note-dropdown-item-text">${noteExists ? 'Edit note' : 'Add note'}</span>
+            `;
 
             // Click handler
             dropdownItem.addEventListener('click', (e) => {
                 e.stopPropagation();
                 toggleNotePanel(dropdownItem, username);
             });
-
-            // Insert before the block button
-            if (blockButton.parentNode) {
-                blockButton.parentNode.insertBefore(dropdownItem, blockButton);
-            }
-        }
+        }, 100);
     }
 
     // Inject note button

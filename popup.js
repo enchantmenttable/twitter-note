@@ -83,7 +83,14 @@
     statusEl.className = 'status' + (type ? ` ${type}` : '');
   }
 
-  // Export notes
+  // Normalize note value (handles old string format and new object format)
+  function normalizeNote(raw) {
+    if (!raw) return { text: '', screenshots: [] };
+    if (typeof raw === 'string') return { text: raw, screenshots: [] };
+    return { text: raw.text || '', screenshots: raw.screenshots || [] };
+  }
+
+  // Export notes as ZIP
   async function handleExport() {
     try {
       const result = await chrome.storage.local.get('notes');
@@ -94,21 +101,43 @@
         return;
       }
 
+      const zip = new JSZip();
+      const screenshotsFolder = zip.folder('screenshots');
+      const exportNotes = {};
+
+      for (const [username, raw] of Object.entries(notes)) {
+        const note = normalizeNote(raw);
+        const screenshotRefs = [];
+
+        note.screenshots.forEach((dataUrl, i) => {
+          const filename = `${username}_${i}.jpg`;
+          // Extract base64 data from data URL
+          const base64 = dataUrl.split(',')[1];
+          screenshotsFolder.file(filename, base64, { base64: true });
+          screenshotRefs.push(`screenshots/${filename}`);
+        });
+
+        exportNotes[username] = {
+          text: note.text,
+          screenshots: screenshotRefs
+        };
+      }
+
       const data = {
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
-        notes: notes
+        notes: exportNotes
       };
 
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      zip.file('notes.json', JSON.stringify(data, null, 2));
+
+      const blob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(blob);
 
       const date = new Date().toISOString().split('T')[0];
-      const filename = `twitter-notes-${date}.json`;
-
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename;
+      a.download = `twitter-notes-${date}.zip`;
       a.click();
 
       URL.revokeObjectURL(url);
@@ -125,16 +154,11 @@
     if (!file) return;
 
     try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-
-      // Validate structure
-      if (!data.notes || typeof data.notes !== 'object') {
-        setStatus('Invalid file format', 'error');
-        return;
+      if (file.name.endsWith('.zip')) {
+        await handleZipImport(file);
+      } else {
+        await handleJsonImport(file);
       }
-
-      await processImport(data.notes);
     } catch (e) {
       console.error('Import error:', e);
       setStatus('Error reading file', 'error');
@@ -144,7 +168,82 @@
     importFile.value = '';
   }
 
-  // Process imported notes
+  // Import from JSON (legacy format)
+  async function handleJsonImport(file) {
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    if (!data.notes || typeof data.notes !== 'object') {
+      setStatus('Invalid file format', 'error');
+      return;
+    }
+
+    // Normalize all notes to new format
+    const normalized = {};
+    for (const [username, raw] of Object.entries(data.notes)) {
+      normalized[username] = normalizeNote(raw);
+    }
+
+    await processImport(normalized);
+  }
+
+  // Import from ZIP
+  async function handleZipImport(file) {
+    const zip = await JSZip.loadAsync(file);
+    const notesFile = zip.file('notes.json');
+
+    if (!notesFile) {
+      setStatus('Invalid ZIP: missing notes.json', 'error');
+      return;
+    }
+
+    const data = JSON.parse(await notesFile.async('string'));
+
+    if (!data.notes || typeof data.notes !== 'object') {
+      setStatus('Invalid file format', 'error');
+      return;
+    }
+
+    // Rebuild notes with screenshot data URLs from ZIP
+    const rebuilt = {};
+    for (const [username, raw] of Object.entries(data.notes)) {
+      const note = normalizeNote(raw);
+      const screenshots = [];
+
+      for (const ref of note.screenshots) {
+        const imgFile = zip.file(ref);
+        if (imgFile) {
+          const base64 = await imgFile.async('base64');
+          screenshots.push(`data:image/jpeg;base64,${base64}`);
+        }
+      }
+
+      rebuilt[username] = { text: note.text, screenshots };
+    }
+
+    await processImport(rebuilt);
+  }
+
+  // Check if two notes are identical
+  function notesEqual(a, b) {
+    const na = normalizeNote(a);
+    const nb = normalizeNote(b);
+    if (na.text !== nb.text) return false;
+    if (na.screenshots.length !== nb.screenshots.length) return false;
+    return na.screenshots.every((s, i) => s === nb.screenshots[i]);
+  }
+
+  // Format note for conflict display
+  function formatNotePreview(note) {
+    const n = normalizeNote(note);
+    let preview = n.text || '(no text)';
+    if (n.screenshots.length > 0) {
+      preview += `\n\n📎 ${n.screenshots.length} screenshot${n.screenshots.length !== 1 ? 's' : ''}`;
+    }
+    return preview;
+  }
+
+  // Process imported notes (expects normalized { text, screenshots } values)
   async function processImport(importedNotes) {
     const result = await chrome.storage.local.get('notes');
     const currentNotes = result.notes || {};
@@ -156,19 +255,19 @@
     importStats = { added: 0, updated: 0, kept: 0 };
 
     // Categorize imported notes
-    for (const [username, importedContent] of Object.entries(importedNotes)) {
-      const currentContent = currentNotes[username];
+    for (const [username, importedNote] of Object.entries(importedNotes)) {
+      const currentRaw = currentNotes[username];
 
-      if (!currentContent) {
+      if (!currentRaw) {
         // New note - auto import
-        resolvedNotes[username] = importedContent;
+        resolvedNotes[username] = importedNote;
         importStats.added++;
-      } else if (currentContent !== importedContent) {
+      } else if (!notesEqual(currentRaw, importedNote)) {
         // Conflict - needs resolution
         conflicts.push({
           username,
-          current: currentContent,
-          imported: importedContent
+          current: normalizeNote(currentRaw),
+          imported: importedNote
         });
       }
       // If content is identical, skip silently
@@ -189,8 +288,8 @@
     const conflict = conflicts[currentConflictIndex];
     conflictTitle.textContent = `Conflict ${currentConflictIndex + 1} of ${conflicts.length}`;
     conflictUsername.textContent = `@${conflict.username}`;
-    currentNoteEl.textContent = conflict.current;
-    importedNoteEl.textContent = conflict.imported;
+    currentNoteEl.textContent = formatNotePreview(conflict.current);
+    importedNoteEl.textContent = formatNotePreview(conflict.imported);
   }
 
   // Resolve single conflict
